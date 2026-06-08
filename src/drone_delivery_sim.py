@@ -74,6 +74,24 @@ class DynamicObstacle:
         )
 
 
+@dataclass(frozen=True)
+class VisionDetection:
+    label: str
+    name: str
+    distance: float
+    confidence: float
+    bearing_deg: float
+
+    def to_dict(self) -> dict:
+        return {
+            "label": self.label,
+            "name": self.name,
+            "distance_m": round(self.distance, 2),
+            "confidence": round(self.confidence, 3),
+            "bearing_deg": round(self.bearing_deg, 1),
+        }
+
+
 @dataclass
 class Scenario:
     width: int
@@ -281,6 +299,63 @@ def lidar_directions() -> list[np.ndarray]:
 LIDAR_DIRECTIONS = lidar_directions()
 
 
+def box_center(obs: BoxObstacle) -> np.ndarray:
+    return np.array([obs.x + obs.w / 2, obs.y + obs.d / 2, obs.z + obs.h / 2], dtype=float)
+
+
+def box_radius(obs: BoxObstacle) -> float:
+    return 0.5 * math.sqrt(obs.w * obs.w + obs.d * obs.d + obs.h * obs.h)
+
+
+def camera_recognition(
+    position: np.ndarray,
+    forward: np.ndarray,
+    scenario: Scenario,
+    dyn_centers: list[np.ndarray],
+    max_range: float = 48.0,
+    fov_deg: float = 76.0,
+) -> list[VisionDetection]:
+    forward = unit(forward)
+    if np.linalg.norm(forward) < 1e-6:
+        forward = unit(scenario.goal - position)
+
+    detections: list[VisionDetection] = []
+    half_fov = math.radians(fov_deg / 2.0)
+
+    def maybe_add(label: str, name: str, center: np.ndarray, radius: float = 0.0) -> None:
+        offset = center - position
+        distance = float(np.linalg.norm(offset))
+        if distance < 1e-6 or distance - radius > max_range:
+            return
+        direction = offset / distance
+        angle = math.acos(float(np.clip(np.dot(forward, direction), -1.0, 1.0)))
+        if angle > half_fov:
+            return
+        range_score = max(0.0, 1.0 - max(distance - radius, 0.0) / max_range)
+        angle_score = max(0.0, 1.0 - angle / half_fov)
+        confidence = 0.35 + 0.45 * range_score + 0.20 * angle_score
+        detections.append(
+            VisionDetection(
+                label=label,
+                name=name,
+                distance=max(distance - radius, 0.0),
+                confidence=min(confidence, 0.99),
+                bearing_deg=math.degrees(angle),
+            )
+        )
+
+    for obs in scenario.static_obstacles:
+        label = "no_fly_zone" if obs.kind == "no_fly" else "building"
+        maybe_add(label, obs.name, box_center(obs), box_radius(obs))
+
+    for center, dyn in zip(dyn_centers, scenario.dynamic_obstacles):
+        maybe_add("dynamic_airspace_obstacle", dyn.name, center, dyn.radius)
+
+    maybe_add("delivery_target", "community emergency point", scenario.goal, 1.8)
+    detections.sort(key=lambda item: (item.distance, -item.confidence))
+    return detections[:8]
+
+
 def ray_hit(
     origin: np.ndarray,
     direction: np.ndarray,
@@ -404,6 +479,7 @@ def simulate(scenario: Scenario, waypoints: list[np.ndarray]) -> dict:
     min_clearance = float("inf")
     lidar_log: list[list[list[float]]] = []
     dyn_log: list[list[list[float]]] = []
+    vision_log: list[list[dict]] = []
     speed_log: list[float] = []
     success = False
     collision = False
@@ -444,6 +520,9 @@ def simulate(scenario: Scenario, waypoints: list[np.ndarray]) -> dict:
         if np.linalg.norm(command) < 1e-6:
             command = attraction
 
+        vision_detections = camera_recognition(position, command, scenario, dyn_centers)
+        vision_log.append([detection.to_dict() for detection in vision_detections])
+
         local_clearance = max(0.0, current_clearance)
         speed_scale = 0.38 + 0.62 * min(local_clearance / 8.0, 1.0)
         velocity = unit(command) * max_speed * speed_scale
@@ -476,6 +555,7 @@ def simulate(scenario: Scenario, waypoints: list[np.ndarray]) -> dict:
         "active_waypoints": active_waypoints,
         "lidar_log": lidar_log,
         "dyn_log": dyn_log[: len(history)],
+        "vision_log": vision_log[: len(history)],
         "speed_log": speed_log,
         "min_clearance": float(min_clearance),
         "path_length": path_length,
@@ -694,7 +774,11 @@ def save_animation(scenario: Scenario, global_path: list[np.ndarray], waypoints:
             line.set_3d_properties([])
 
         ax.view_init(elev=27, azim=-62 + frame_number * 0.11)
-        title.set_text(f"t={idx * result['dt']:5.1f}s | altitude={pos[2]:4.1f}m | step={idx:03d}")
+        vision_count = len(result["vision_log"][min(idx, len(result["vision_log"]) - 1)]) if result["vision_log"] else 0
+        title.set_text(
+            f"t={idx * result['dt']:5.1f}s | altitude={pos[2]:4.1f}m | "
+            f"vision={vision_count} | step={idx:03d}"
+        )
         return [trail, drone, dyn_scatter, title, *lidar_lines]
 
     ani = animation.FuncAnimation(fig, update, frames=len(frame_indices), interval=85, blit=False)
@@ -730,6 +814,7 @@ def save_animation(scenario: Scenario, global_path: list[np.ndarray], waypoints:
 
 def save_summary(scenario: Scenario, global_path: list[np.ndarray], waypoints: list[np.ndarray], result: dict) -> None:
     history = result["history"]
+    vision_counts = count_vision_detections(result)
     summary = {
         "scenario": "urban_low_altitude_3d_delivery",
         "airspace_size_m": [scenario.width, scenario.depth, scenario.ceiling],
@@ -748,11 +833,97 @@ def save_summary(scenario: Scenario, global_path: list[np.ndarray], waypoints: l
         "min_altitude_m": round(float(np.min(history[:, 2])), 2),
         "max_altitude_m": round(float(np.max(history[:, 2])), 2),
         "mean_altitude_m": round(float(np.mean(history[:, 2])), 2),
+        "vision_detection_events": vision_counts["total"],
+        "vision_dynamic_obstacle_events": vision_counts["dynamic_airspace_obstacle"],
+        "vision_target_detected": vision_counts["delivery_target"] > 0,
     }
     (OUTPUT_DIR / "summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+
+def count_vision_detections(result: dict) -> dict[str, int]:
+    counts = {
+        "total": 0,
+        "building": 0,
+        "no_fly_zone": 0,
+        "dynamic_airspace_obstacle": 0,
+        "delivery_target": 0,
+    }
+    for frame in result["vision_log"]:
+        for detection in frame:
+            label = detection["label"]
+            counts["total"] += 1
+            if label in counts:
+                counts[label] += 1
+    return counts
+
+
+def build_validation_report(
+    scenario: Scenario,
+    global_path: list[np.ndarray],
+    waypoints: list[np.ndarray],
+    result: dict,
+) -> dict:
+    history = result["history"]
+    speed_log = result["speed_log"]
+    vision_counts = count_vision_detections(result)
+    lidar_frames = sum(1 for frame in result["lidar_log"] if frame)
+    max_speed = max(speed_log) if speed_log else 0.0
+
+    checks = {
+        "path_planning": {
+            "passed": len(global_path) > 1 and len(waypoints) > 1,
+            "detail": f"3D A* nodes={len(global_path)}, simplified waypoints={len(waypoints)}",
+        },
+        "flight_control": {
+            "passed": bool(result["success"]) and not bool(result["collision"]) and max_speed <= 6.7,
+            "detail": f"success={result['success']}, collision={result['collision']}, max_speed={max_speed:.2f} m/s",
+        },
+        "lidar_obstacle_avoidance": {
+            "passed": result["min_clearance"] >= 0.65 and lidar_frames > 0,
+            "detail": f"minimum_clearance={result['min_clearance']:.2f} m, lidar_active_frames={lidar_frames}",
+        },
+        "vision_recognition": {
+            "passed": vision_counts["dynamic_airspace_obstacle"] > 0 and vision_counts["delivery_target"] > 0,
+            "detail": (
+                f"total={vision_counts['total']}, dynamic={vision_counts['dynamic_airspace_obstacle']}, "
+                f"target={vision_counts['delivery_target']}"
+            ),
+        },
+        "altitude_envelope": {
+            "passed": float(np.min(history[:, 2])) >= scenario.min_altitude and float(np.max(history[:, 2])) <= scenario.ceiling,
+            "detail": f"altitude_range={float(np.min(history[:, 2])):.2f}-{float(np.max(history[:, 2])):.2f} m",
+        },
+    }
+    return {
+        "scenario": "urban_low_altitude_3d_delivery",
+        "overall_passed": all(check["passed"] for check in checks.values()),
+        "checks": checks,
+        "debug_metrics": {
+            "flight_time_s": round(result["flight_time_s"], 2),
+            "path_length_m": round(result["path_length"], 2),
+            "minimum_clearance_m": round(result["min_clearance"], 2),
+            "mean_speed_mps": round(float(np.mean(speed_log)) if speed_log else 0.0, 2),
+            "lidar_active_frames": lidar_frames,
+            "vision_counts": vision_counts,
+        },
+    }
+
+
+def save_validation_report(
+    scenario: Scenario,
+    global_path: list[np.ndarray],
+    waypoints: list[np.ndarray],
+    result: dict,
+) -> dict:
+    report = build_validation_report(scenario, global_path, waypoints, result)
+    (OUTPUT_DIR / "validation_report.json").write_text(
+        json.dumps(report, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return report
 
 
 def main() -> None:
@@ -765,8 +936,10 @@ def main() -> None:
     plot_final(scenario, global_path, waypoints, result)
     save_animation(scenario, global_path, waypoints, result)
     save_summary(scenario, global_path, waypoints, result)
+    validation_report = save_validation_report(scenario, global_path, waypoints, result)
 
     print("3D simulation complete")
+    print(f"validation passed: {validation_report['overall_passed']}")
     print(f"success: {result['success']}")
     print(f"collision: {result['collision']}")
     print(f"flight time: {result['flight_time_s']:.2f}s")

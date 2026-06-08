@@ -1,0 +1,40 @@
+{
+  "scenario": "urban_low_altitude_3d_delivery",
+  "overall_passed": true,
+  "checks": {
+    "path_planning": {
+      "passed": true,
+      "detail": "3D A* nodes=62, simplified waypoints=9"
+    },
+    "flight_control": {
+      "passed": true,
+      "detail": "success=True, collision=False, max_speed=6.11 m/s"
+    },
+    "lidar_obstacle_avoidance": {
+      "passed": true,
+      "detail": "minimum_clearance=0.84 m, lidar_active_frames=156"
+    },
+    "vision_recognition": {
+      "passed": true,
+      "detail": "total=187, dynamic=42, target=22"
+    },
+    "altitude_envelope": {
+      "passed": true,
+      "detail": "altitude_range=6.00-30.13 m"
+    }
+  },
+  "debug_metrics": {
+    "flight_time_s": 40.56,
+    "path_length_m": 173.67,
+    "minimum_clearance_m": 0.84,
+    "mean_speed_mps": 4.28,
+    "lidar_active_frames": 156,
+    "vision_counts": {
+      "total": 187,
+      "building": 73,
+      "no_fly_zone": 50,
+      "dynamic_airspace_obstacle": 42,
+      "delivery_target": 22
+    }
+  }
+}

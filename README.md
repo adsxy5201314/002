@@ -14,6 +14,7 @@ powershell -ExecutionPolicy Bypass -File .\run_demo.ps1
 - `outputs/drone_delivery_demo.gif`：演示动图
 - `outputs/drone_delivery_demo.mp4`：演示视频
 - `outputs/summary.json`：实验指标
+- `outputs/validation_report.json`：调试验证报告
 
 ## 项目结构
 
@@ -26,7 +27,8 @@ powershell -ExecutionPolicy Bypass -File .\run_demo.ps1
 │  ├─ final_trajectory.png
 │  ├─ drone_delivery_demo.gif
 │  ├─ drone_delivery_demo.mp4
-│  └─ summary.json
+│  ├─ summary.json
+│  └─ validation_report.json
 ├─ src/
 │  └─ drone_delivery_sim.py
 ├─ requirements.txt
@@ -38,9 +40,10 @@ powershell -ExecutionPolicy Bypass -File .\run_demo.ps1
 - 三维 A* 网格路径规划：在楼体、禁飞空域柱和安全缓冲盒约束下生成全局可行航线。
 - 三维路径简化与前视跟踪：对 A* 节点序列进行空间视线检测，并用前视目标点减少飞行抖动。
 - 三维激光雷达避障：飞行过程中向水平、上仰、下俯方向发射扫描射线，基于命中点生成局部排斥向量。
+- 前视视觉识别仿真：模拟机载相机识别建筑、禁飞空域、动态障碍和目标点，并记录置信度。
 - 动态障碍规避：模拟巡检无人机、临时吊装设备和医疗直升机进近等低空动态风险。
-- 指标验证：输出飞行时间、三维航程、最小安全距离、高度范围、是否碰撞等结果。
+- 调试与验证：输出飞行时间、三维航程、最小安全距离、传感器识别次数和 pass/fail 验证报告。
 
 ## 当前实验结果
 
-本地已完成一次三维仿真运行，结果为：成功到达目标点、无碰撞、飞行时间 40.56 s、实际航程 173.67 m、最小安全距离 0.84 m、最高飞行高度 30.13 m。
+本地已完成一次三维仿真运行，结果为：成功到达目标点、无碰撞、飞行时间 40.56 s、实际航程 173.67 m、最小安全距离 0.84 m、最高飞行高度 30.13 m，自动验证结论为通过。

@@ -27,5 +27,8 @@
   "mean_speed_mps": 4.28,
   "min_altitude_m": 6.0,
   "max_altitude_m": 30.13,
-  "mean_altitude_m": 19.98
+  "mean_altitude_m": 19.98,
+  "vision_detection_events": 187,
+  "vision_dynamic_obstacle_events": 42,
+  "vision_target_detected": true
 }
