@@ -1,0 +1,21 @@
+{
+  "scenario": "urban_low_altitude_emergency_delivery",
+  "start_m": [
+    8.0,
+    9.0
+  ],
+  "goal_m": [
+    112.0,
+    70.0
+  ],
+  "static_obstacle_count": 6,
+  "dynamic_obstacle_count": 2,
+  "global_grid_nodes": 132,
+  "smoothed_waypoints": 7,
+  "success": true,
+  "collision": false,
+  "flight_time_s": 35.0,
+  "executed_path_length_m": 145.91,
+  "minimum_clearance_m": 1.06,
+  "mean_speed_mps": 4.17
+}
