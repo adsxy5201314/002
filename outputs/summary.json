@@ -1,21 +1,31 @@
 {
-  "scenario": "urban_low_altitude_emergency_delivery",
+  "scenario": "urban_low_altitude_3d_delivery",
+  "airspace_size_m": [
+    120,
+    80,
+    42
+  ],
   "start_m": [
     8.0,
-    9.0
+    8.0,
+    6.0
   ],
   "goal_m": [
     112.0,
-    70.0
+    70.0,
+    6.0
   ],
   "static_obstacle_count": 6,
-  "dynamic_obstacle_count": 2,
-  "global_grid_nodes": 132,
-  "smoothed_waypoints": 7,
+  "dynamic_obstacle_count": 3,
+  "global_grid_nodes": 62,
+  "smoothed_waypoints": 9,
   "success": true,
   "collision": false,
-  "flight_time_s": 35.0,
-  "executed_path_length_m": 145.91,
-  "minimum_clearance_m": 1.06,
-  "mean_speed_mps": 4.17
+  "flight_time_s": 40.56,
+  "executed_path_length_m": 173.67,
+  "minimum_clearance_m": 0.84,
+  "mean_speed_mps": 4.28,
+  "min_altitude_m": 6.0,
+  "max_altitude_m": 30.13,
+  "mean_altitude_m": 19.98
 }
